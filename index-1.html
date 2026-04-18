@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>GeoQuiz 🌍</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#0094ff" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="GeoQuiz" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+
+  <!-- SEO -->
+  <meta name="description" content="Davlatlar, poytaxtlar, bayroqlar va xaritalar bo'yicha interaktiv geografiya testi" />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: #080c14; }
+    #root { height: 100%; }
+    body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- React + Babel (CDN, no build needed) -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // ─── DATA ─────────────────────────────────────────────────────────────────
+    const DEFAULT_QUESTIONS = [
+      { id:1,  type:"capital", country:"Fransiya",    answer:"Parij",    options:["London","Berlin","Parij","Madrid"],          fact:"Parij — «Nur shahri» deb ataladi." },
+      { id:2,  type:"capital", country:"Yaponiya",    answer:"Tokio",    options:["Osaka","Tokio","Seul","Pekin"],               fact:"Tokio — dunyoning eng aholi zich shaharlaridan biri." },
+      { id:3,  type:"flag",    country:"Germaniya",   answer:"Germaniya",flagEmoji:"🇩🇪", options:["Belgiya","Germaniya","Niderlandiya","Avstriya"], fact:"Germaniya bayrog'i qora, qizil va oltin ranglardan iborat." },
+      { id:4,  type:"flag",    country:"Braziliya",   answer:"Braziliya",flagEmoji:"🇧🇷", options:["Argentina","Kolumbiya","Braziliya","Meksika"],   fact:"Braziliya bayrog'idagi yashil rang o'rmonlarni anglatadi." },
+      { id:5,  type:"capital", country:"Avstraliya",  answer:"Kanberra", options:["Sidney","Melburn","Kanberra","Brisben"],       fact:"Ko'pchilik Sydneyni poytaxt deb o'ylaydi, lekin aslida Kanberra." },
+      { id:6,  type:"map",     country:"Italiya",     answer:"Italiya",  mapHint:"🥾 Etik shaklidagi yarim orol", options:["Gretsiya","Ispaniya","Italiya","Portugaliya"], fact:"Italiya xaritada etikka o'xshaydi." },
+      { id:7,  type:"capital", country:"Kanada",      answer:"Ottawa",   options:["Toronto","Vankuver","Monreal","Ottawa"],       fact:"Ottawa — Kanada poytaxti, Toronto emas." },
+      { id:8,  type:"flag",    country:"Turkiya",     answer:"Turkiya",  flagEmoji:"🇹🇷", options:["Tunis","Pokiston","Turkiya","Ozarbayjon"],     fact:"Turkiya bayrog'idagi oy va yulduz Islom ramzlaridir." },
+      { id:9,  type:"fact",    question:"Qaysi davlat eng ko'p mamlakatga chegaradosh?", answer:"Rossiya", options:["Xitoy","Rossiya","Braziliya","Germaniya"], fact:"Rossiya 14 ta davlat bilan chegaradosh." },
+      { id:10, type:"capital", country:"O'zbekiston", answer:"Toshkent", options:["Samarqand","Buxoro","Toshkent","Namangan"],   fact:"Toshkent — Markaziy Osiyoning eng yirik shahri." },
+      { id:11, type:"flag",    country:"Hindiston",   answer:"Hindiston",flagEmoji:"🇮🇳", options:["Bangladesh","Pokiston","Hindiston","Nepal"],    fact:"Hindiston bayrog'i o'rtasida Ashoka g'ildiragi tasvirlangan." },
+      { id:12, type:"capital", country:"Braziliya",   answer:"Braziliya",options:["Rio de Janeyro","San-Paulu","Braziliya","Salvador"], fact:"Ko'pchilik Rio de Janeyro poytaxt deb o'ylaydi, lekin aslida Braziliya shahri." },
+      { id:13, type:"fact",    question:"Qaysi davlatda eng ko'p til rasmiy til hisoblanadi?", answer:"Janubiy Afrika", options:["Hindiston","Janubiy Afrika","Belgiya","Shveytsariya"], fact:"Janubiy Afrikada 11 ta rasmiy til mavjud." },
+      { id:14, type:"map",     country:"Norvegiya",   answer:"Norvegiya", mapHint:"🦌 Shimolda fjordlar mamlakati", options:["Shvetsiya","Finlandiya","Norvegiya","Daniya"], fact:"Norvegiyada 50,000 dan ortiq fjord mavjud." },
+      { id:15, type:"capital", country:"Misr",        answer:"Qohira",   options:["Iskandariya","Qohira","Luxor","Asuon"],        fact:"Qohira — Afrika va Arab dunyosining eng yirik shahri." },
+    ];
+
+    const QUESTION_TIME = 15;
+    const STORAGE_KEY = "geoquiz_questions_v2";
+
+    function loadQuestions() {
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        return saved ? JSON.parse(saved) : DEFAULT_QUESTIONS;
+      } catch { return DEFAULT_QUESTIONS; }
+    }
+
+    function saveQuestions(qs) {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(qs)); } catch {}
+    }
+
+    function shuffle(arr) { return [...arr].sort(() => Math.random() - 0.5); }
+
+    // ─── LANDING ──────────────────────────────────────────────────────────────
+    function LandingScreen({ onStart, onAdmin }) {
+      return (
+        <div className="screen landing">
+          <div className="globe-bg">
+            <div className="globe-ring r1" />
+            <div className="globe-ring r2" />
+            <div className="globe-ring r3" />
+          </div>
+          <div className="landing-content">
+            <div className="logo-area">
+              <span className="logo-icon">🌍</span>
+              <h1 className="logo-title">GeoQuiz</h1>
+              <p className="logo-sub">Geografiyani o'rganishning eng qiziqarli usuli</p>
+            </div>
+            <div className="landing-card">
+              <p className="landing-desc">Davlatlar, poytaxtlar, bayroqlar va xaritalar orqali bilimlaringizni sinab ko'ring.</p>
+              <div className="features">
+                <span>🏛️ Poytaxtlar</span>
+                <span>🚩 Bayroqlar</span>
+                <span>🗺️ Xaritalar</span>
+                <span>💡 Faktlar</span>
+              </div>
+            </div>
+            <div className="quiz-info-box">
+              <p>🎯 Sizni <strong>10 ta savoldan</strong> iborat test kutmoqda</p>
+              <p>⏱️ Har bir savolda <strong>{QUESTION_TIME} soniya</strong> vaqt mavjud</p>
+              <p>⚡ Tez va to'g'ri javob — <strong>yuqori ball!</strong></p>
+            </div>
+            <button className="cta-btn" onClick={onStart}>🚀 Testni boshlash</button>
+            <button className="admin-link-btn" onClick={onAdmin}>⚙️ Admin panel</button>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── TIMER RING ───────────────────────────────────────────────────────────
+    function TimerRing({ timeLeft, total }) {
+      const pct = timeLeft / total;
+      const r = 22, circ = 2 * Math.PI * r;
+      const color = timeLeft <= 5 ? "#ff4d6d" : timeLeft <= 10 ? "#ffd166" : "#06d6a0";
+      return (
+        <div className="timer-ring-wrap">
+          <svg width="60" height="60" viewBox="0 0 60 60">
+            <circle cx="30" cy="30" r={r} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="4"/>
+            <circle cx="30" cy="30" r={r} fill="none" stroke={color} strokeWidth="4"
+              strokeDasharray={`${circ * pct} ${circ}`} strokeLinecap="round"
+              transform="rotate(-90 30 30)" style={{transition:"stroke-dasharray 0.9s linear,stroke 0.3s"}}/>
+          </svg>
+          <span className="timer-num" style={{color}}>{timeLeft}</span>
+        </div>
+      );
+    }
+
+    // ─── QUIZ SCREEN ──────────────────────────────────────────────────────────
+    function QuizScreen({ questions, onFinish }) {
+      const [idx, setIdx] = useState(0);
+      const [selected, setSelected] = useState(null);
+      const [score, setScore] = useState(0);
+      const [timeLeft, setTimeLeft] = useState(QUESTION_TIME);
+      const [showFact, setShowFact] = useState(false);
+      const [answers, setAnswers] = useState([]);
+      const timerRef = useRef(null);
+      const q = questions[idx];
+
+      useEffect(() => { setSelected(null); setShowFact(false); setTimeLeft(QUESTION_TIME); }, [idx]);
+
+      useEffect(() => {
+        if (selected !== null) return;
+        timerRef.current = setInterval(() => {
+          setTimeLeft(t => {
+            if (t <= 1) { clearInterval(timerRef.current); handleAnswer(null); return 0; }
+            return t - 1;
+          });
+        }, 1000);
+        return () => clearInterval(timerRef.current);
+      }, [idx, selected]);
+
+      function handleAnswer(opt) {
+        if (selected !== null) return;
+        clearInterval(timerRef.current);
+        setSelected(opt);
+        const correct = opt === q.answer;
+        if (correct) setScore(s => s + (timeLeft > 10 ? 3 : timeLeft > 5 ? 2 : 1));
+        setAnswers(a => [...a, { q, chosen: opt, correct }]);
+        setShowFact(true);
+      }
+
+      function next() {
+        const pts = selected === q.answer ? (timeLeft > 10 ? 3 : timeLeft > 5 ? 2 : 1) : 0;
+        if (idx + 1 >= questions.length) onFinish(score + (answers.find(a=>a.q.id===q.id) ? 0 : pts), [...answers]);
+        else setIdx(i => i + 1);
+      }
+
+      const optClass = opt => {
+        if (selected === null) return "opt";
+        if (opt === q.answer) return "opt correct";
+        if (opt === selected) return "opt wrong";
+        return "opt dim";
+      };
+
+      const QBody = () => {
+        if (q.type === "capital") return <div className="q-body"><div className="q-type-tag">🏛️ Poytaxt</div><div className="q-main">{q.country}ning poytaxti qaysi?</div></div>;
+        if (q.type === "flag")    return <div className="q-body"><div className="q-type-tag">🚩 Bayroq</div><div className="flag-display">{q.flagEmoji}</div><div className="q-main">Bu bayroq qaysi davlatga tegishli?</div></div>;
+        if (q.type === "map")     return <div className="q-body"><div className="q-type-tag">🗺️ Xarita</div><div className="map-hint-box">{q.mapHint}</div><div className="q-main">Xaritada ko'rsatilgan hudud qaysi davlat?</div></div>;
+        if (q.type === "fact")    return <div className="q-body"><div className="q-type-tag">💡 Fakt savol</div><div className="q-main">{q.question}</div></div>;
+        return null;
+      };
+
+      return (
+        <div className="screen quiz">
+          <div className="quiz-header">
+            <div className="progress-area">
+              <div className="progress-bar"><div className="progress-fill" style={{width:`${((idx+1)/questions.length)*100}%`}}/></div>
+              <span className="progress-label">{idx+1} / {questions.length}</span>
+            </div>
+            <TimerRing timeLeft={timeLeft} total={QUESTION_TIME}/>
+            <div className="score-badge">⭐ {score}</div>
+          </div>
+          <div className={`quiz-card${selected!==null?(selected===q.answer?" card-correct":" card-wrong"):""}`}>
+            <QBody/>
+            <div className="options-grid">
+              {q.options.map(opt => (
+                <button key={opt} className={optClass(opt)} onClick={() => handleAnswer(opt)} disabled={selected !== null}>
+                  {opt === q.answer && selected !== null ? "✅ " : opt === selected && selected !== q.answer ? "❌ " : ""}{opt}
+                </button>
+              ))}
+            </div>
+            {showFact && <div className="fact-box"><span className="fact-icon">💡</span><span>{q.fact}</span></div>}
+            {selected !== null && <button className="next-btn" onClick={next}>{idx+1 >= questions.length ? "🏆 Natijani ko'rish" : "Keyingisi →"}</button>}
+          </div>
+        </div>
+      );
+    }
+
+    // ─── RESULT SCREEN ────────────────────────────────────────────────────────
+    function ResultScreen({ score, answers, total, onRestart, onAdmin }) {
+      const maxScore = total * 3;
+      const pct = Math.round((score / maxScore) * 100);
+      const correct = answers.filter(a => a.correct).length;
+      const [tier, emoji, msg] = pct >= 70
+        ? ["good","🎉","Ajoyib! Siz geografiyani yaxshi bilasiz!"]
+        : pct >= 40
+        ? ["mid","👍","Yomon emas, yana mashq qiling!"]
+        : ["low","📚","Ko'proq o'rganish kerak!"];
+      return (
+        <div className="screen result">
+          <div className={`result-card tier-${tier}`}>
+            <div className="result-emoji">{emoji}</div>
+            <div className="result-msg">{msg}</div>
+            <div className="result-stats">
+              <div className="stat"><span className="stat-val">{correct}</span><span className="stat-label">To'g'ri</span></div>
+              <div className="stat"><span className="stat-val">{total-correct}</span><span className="stat-label">Noto'g'ri</span></div>
+              <div className="stat"><span className="stat-val">{score}</span><span className="stat-label">Ball</span></div>
+            </div>
+            <div className="score-pct-bar"><div className="score-pct-fill" style={{width:`${pct}%`}}/></div>
+            <p className="score-pct-label">{pct}% natija</p>
+            <div className="answers-review">
+              {answers.map((a,i) => (
+                <div key={i} className={`review-row ${a.correct?"rev-ok":"rev-fail"}`}>
+                  <span>{a.correct?"✅":"❌"}</span>
+                  <span className="rev-q">{a.q.type==="fact"?a.q.question:a.q.type==="capital"?`${a.q.country} poytaxti`:`${a.q.country} bayrog'i`}</span>
+                  <span className="rev-ans">{a.q.answer}</span>
+                </div>
+              ))}
+            </div>
+            <button className="cta-btn" onClick={onRestart}>🔄 Qayta boshlash</button>
+            <button className="admin-btn-sm" onClick={onAdmin}>⚙️ Admin panel</button>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── ADMIN PANEL ──────────────────────────────────────────────────────────
+    function AdminPanel({ questions, setQuestions, onClose }) {
+      const [tab, setTab] = useState("list");
+      const [editing, setEditing] = useState(null);
+      const [form, setForm] = useState(null);
+      const [pw, setPw] = useState("");
+      const [auth, setAuth] = useState(false);
+      const PASS = "geo123";
+
+      function tryLogin() {
+        if (pw === PASS) setAuth(true);
+      }
+
+      if (!auth) return (
+        <div className="admin-overlay">
+          <div className="admin-login">
+            <div className="login-icon">🔐</div>
+            <h2>Admin kirish</h2>
+            <input type="password" placeholder="Parol..." value={pw}
+              onChange={e => setPw(e.target.value)}
+              onKeyDown={e => e.key==="Enter" && tryLogin()} />
+            <div className="admin-login-btns">
+              <button className="cta-btn" onClick={tryLogin}>Kirish</button>
+              <button className="admin-btn-sm" onClick={onClose}>Bekor</button>
+            </div>
+            {pw && pw !== PASS && <p className="err-txt">Noto'g'ri parol</p>}
+            <p className="hint-txt">Demo parol: <code>geo123</code></p>
+          </div>
+        </div>
+      );
+
+      function startEdit(q) { setEditing(q.id); setForm({...q, optStr: q.options.join("|")}); setTab("edit"); }
+      function startNew() {
+        setEditing("new");
+        setForm({id:Date.now(), type:"capital", country:"", answer:"", options:[], optStr:"|||", fact:"", question:"", flagEmoji:"", mapHint:""});
+        setTab("edit");
+      }
+      function saveForm() {
+        const opts = form.optStr.split("|").map(s=>s.trim()).filter(Boolean);
+        if (opts.length < 2) return alert("Kamida 2 ta variant kiriting (| bilan ajrating)");
+        if (!form.answer.trim()) return alert("To'g'ri javobni kiriting");
+        const saved = {...form, options: opts};
+        delete saved.optStr;
+        const updated = editing === "new"
+          ? [...questions, saved]
+          : questions.map(q => q.id === editing ? saved : q);
+        setQuestions(updated);
+        saveQuestions(updated);
+        setTab("list"); setEditing(null); setForm(null);
+      }
+      function deleteQ(id) {
+        if (!confirm("O'chirishni tasdiqlaysizmi?")) return;
+        const updated = questions.filter(q => q.id !== id);
+        setQuestions(updated); saveQuestions(updated);
+      }
+      function resetDefault() {
+        if (!confirm("Barcha savollarni standart holatga qaytarishni tasdiqlaysizmi?")) return;
+        setQuestions(DEFAULT_QUESTIONS); saveQuestions(DEFAULT_QUESTIONS);
+      }
+
+      const typeLabels = { capital:"🏛️ Poytaxt", flag:"🚩 Bayroq", map:"🗺️ Xarita", fact:"💡 Fakt" };
+
+      return (
+        <div className="admin-overlay">
+          <div className="admin-panel">
+            <div className="admin-header">
+              <h2>⚙️ Admin Panel</h2>
+              <div style={{display:"flex",gap:"0.5rem"}}>
+                <button className="reset-btn" onClick={resetDefault} title="Standartga qaytarish">↺</button>
+                <button className="close-btn" onClick={onClose}>✕</button>
+              </div>
+            </div>
+            <div className="admin-tabs">
+              <button className={tab==="list"?"atab active":"atab"} onClick={() => setTab("list")}>📋 Savollar ({questions.length})</button>
+              <button className={tab==="edit"?"atab active":"atab"} onClick={() => editing ? setTab("edit") : startNew()}>
+                {editing ? "✏️ Tahrirlash" : "➕ Yangi"}
+              </button>
+              <button className="atab" onClick={startNew}>➕ Yangi savol</button>
+            </div>
+
+            {tab === "list" && (
+              <div className="admin-list">
+                {questions.map((q,i) => (
+                  <div key={q.id} className="admin-q-row">
+                    <span className="q-num">#{i+1}</span>
+                    <span className="q-type-badge">{typeLabels[q.type]}</span>
+                    <span className="q-text">{q.type==="fact" ? q.question : q.country}</span>
+                    <span className="q-answer">→ {q.answer}</span>
+                    <div className="q-actions">
+                      <button onClick={() => startEdit(q)}>✏️</button>
+                      <button onClick={() => deleteQ(q.id)}>🗑️</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {tab === "edit" && form && (
+              <div className="admin-form">
+                <label>Savol turi</label>
+                <select value={form.type} onChange={e => setForm(f => ({...f, type:e.target.value}))}>
+                  <option value="capital">🏛️ Poytaxt</option>
+                  <option value="flag">🚩 Bayroq</option>
+                  <option value="map">🗺️ Xarita</option>
+                  <option value="fact">💡 Fakt savol</option>
+                </select>
+
+                {form.type !== "fact" && <>
+                  <label>Davlat nomi</label>
+                  <input value={form.country||""} onChange={e => setForm(f=>({...f,country:e.target.value}))} placeholder="Masalan: Yaponiya"/>
+                </>}
+                {form.type === "fact" && <>
+                  <label>Savol matni</label>
+                  <input value={form.question||""} onChange={e => setForm(f=>({...f,question:e.target.value}))} placeholder="Savol..."/>
+                </>}
+                {form.type === "flag" && <>
+                  <label>Bayroq emoji</label>
+                  <input value={form.flagEmoji||""} onChange={e => setForm(f=>({...f,flagEmoji:e.target.value}))} placeholder="🇺🇿"/>
+                </>}
+                {form.type === "map" && <>
+                  <label>Xarita maslahat matni</label>
+                  <input value={form.mapHint||""} onChange={e => setForm(f=>({...f,mapHint:e.target.value}))} placeholder="🥾 Etik shakli..."/>
+                </>}
+
+                <label>To'g'ri javob</label>
+                <input value={form.answer||""} onChange={e => setForm(f=>({...f,answer:e.target.value}))} placeholder="To'g'ri javob"/>
+
+                <label>Variantlar (| bilan ajrating)</label>
+                <input value={form.optStr||""} onChange={e => setForm(f=>({...f,optStr:e.target.value}))} placeholder="Tokio|Osaka|Seul|Pekin"/>
+
+                <label>Fakt</label>
+                <textarea value={form.fact||""} onChange={e => setForm(f=>({...f,fact:e.target.value}))} placeholder="Qiziqarli fakt..." rows="2"/>
+
+                <div className="form-btns">
+                  <button className="cta-btn" onClick={saveForm}>💾 Saqlash</button>
+                  <button className="admin-btn-sm" onClick={() => {setTab("list");setEditing(null);setForm(null);}}>Bekor</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ─── APP ROOT ─────────────────────────────────────────────────────────────
+    function App() {
+      const [screen, setScreen] = useState("landing");
+      const [questions, setQuestions] = useState(loadQuestions);
+      const [quizQ, setQuizQ] = useState([]);
+      const [result, setResult] = useState(null);
+      const [showAdmin, setShowAdmin] = useState(false);
+
+      function startQuiz() {
+        setQuizQ(shuffle(questions).slice(0, Math.min(10, questions.length)));
+        setScreen("quiz");
+      }
+
+      return (
+        <div className="app">
+          {screen === "landing" && <LandingScreen onStart={startQuiz} onAdmin={() => setShowAdmin(true)}/>}
+          {screen === "quiz" && <QuizScreen questions={quizQ} onFinish={(s,a) => { setResult({score:s,answers:a}); setScreen("result"); }}/>}
+          {screen === "result" && result && (
+            <ResultScreen score={result.score} answers={result.answers} total={quizQ.length}
+              onRestart={() => { setResult(null); setScreen("landing"); }}
+              onAdmin={() => setShowAdmin(true)}/>
+          )}
+          {showAdmin && <AdminPanel questions={questions} setQuestions={setQuestions} onClose={() => setShowAdmin(false)}/>}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+  </script>
+
+  <!-- Inline CSS -->
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    .app { min-height: 100vh; background: #080c14; font-family: 'DM Sans', sans-serif; color: #e8eaf0; overflow-x: hidden; }
+    .screen { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1.5rem; position: relative; }
+
+    /* LANDING */
+    .landing { background: radial-gradient(ellipse at 60% 20%, #0d2444 0%, #080c14 60%); }
+    .globe-bg { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+    .globe-ring { position: absolute; border-radius: 50%; border: 1px solid rgba(0,200,255,0.07); left: 50%; top: 50%; transform: translate(-50%,-50%); }
+    .r1 { width: 380px; height: 380px; animation: pulse 4s ease-in-out infinite; }
+    .r2 { width: 620px; height: 620px; animation: pulse 4s ease-in-out 1.3s infinite; }
+    .r3 { width: 860px; height: 860px; animation: pulse 4s ease-in-out 2.6s infinite; }
+    @keyframes pulse { 0%,100%{opacity:.25} 50%{opacity:.65} }
+
+    .landing-content { position: relative; z-index: 1; max-width: 460px; width: 100%; display: flex; flex-direction: column; gap: 1.25rem; }
+    .logo-area { text-align: center; }
+    .logo-icon { font-size: 3.5rem; display: block; animation: spin 25s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .logo-title { font-family: 'Syne', sans-serif; font-size: 2.8rem; font-weight: 800; background: linear-gradient(135deg,#00d4ff,#0094ff,#00ff9d); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .logo-sub { color: #7fa3c4; font-size: 0.9rem; margin-top: 0.25rem; }
+
+    .landing-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 1.25rem 1.5rem; }
+    .landing-desc { color: #9ab0c8; line-height: 1.6; margin-bottom: 0.9rem; font-size: 0.92rem; }
+    .features { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .features span { background: rgba(0,148,255,0.1); border: 1px solid rgba(0,148,255,0.22); border-radius: 20px; padding: 0.25rem 0.75rem; font-size: 0.82rem; color: #60b8ff; }
+
+    .quiz-info-box { background: rgba(0,255,157,0.04); border: 1px solid rgba(0,255,157,0.13); border-radius: 12px; padding: 0.9rem 1.1rem; display: flex; flex-direction: column; gap: 0.45rem; font-size: 0.88rem; color: #9ab0c8; }
+    .quiz-info-box strong { color: #00ff9d; }
+
+    .cta-btn { background: linear-gradient(135deg,#0094ff,#00d4ff); border: none; border-radius: 14px; padding: 0.95rem 2rem; font-size: 1.05rem; font-family: 'Syne', sans-serif; font-weight: 700; color: #fff; cursor: pointer; box-shadow: 0 0 28px rgba(0,148,255,0.35); transition: transform .2s, box-shadow .2s; width: 100%; }
+    .cta-btn:hover { transform: translateY(-2px); box-shadow: 0 0 40px rgba(0,148,255,0.55); }
+    .cta-btn:active { transform: scale(0.97); }
+
+    .admin-link-btn { background: transparent; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 0.6rem; font-size: 0.85rem; color: #5a7a9a; cursor: pointer; width: 100%; transition: all .2s; }
+    .admin-link-btn:hover { background: rgba(255,255,255,0.05); color: #9ab0c8; }
+
+    /* QUIZ */
+    .quiz { background: #080c14; justify-content: flex-start; padding-top: 1rem; }
+    .quiz-header { width: 100%; max-width: 520px; display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.25rem; }
+    .progress-area { flex: 1; }
+    .progress-bar { height: 5px; background: rgba(255,255,255,0.07); border-radius: 99px; overflow: hidden; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg,#0094ff,#00d4ff); border-radius: 99px; transition: width .4s ease; }
+    .progress-label { font-size: 0.72rem; color: #5a7a9a; margin-top: 0.25rem; display: block; }
+
+    .timer-ring-wrap { position: relative; width: 60px; height: 60px; flex-shrink: 0; }
+    .timer-num { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: 'Syne', sans-serif; font-size: 1rem; font-weight: 800; }
+    .score-badge { background: rgba(255,215,0,0.1); border: 1px solid rgba(255,215,0,0.22); border-radius: 8px; padding: 0.35rem 0.65rem; font-size: 0.88rem; color: #ffd166; font-family: 'Syne', sans-serif; font-weight: 700; }
+
+    .quiz-card { width: 100%; max-width: 520px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 1.75rem 1.5rem; transition: border-color .3s; }
+    .quiz-card.card-correct { border-color: rgba(6,214,160,0.4); }
+    .quiz-card.card-wrong   { border-color: rgba(255,77,109,0.4);  }
+
+    .q-body { margin-bottom: 1.4rem; }
+    .q-type-tag { display: inline-block; background: rgba(0,148,255,0.1); border: 1px solid rgba(0,148,255,0.2); border-radius: 20px; padding: 0.2rem 0.75rem; font-size: 0.78rem; color: #60b8ff; margin-bottom: 0.85rem; }
+    .q-main { font-family: 'Syne', sans-serif; font-size: 1.3rem; font-weight: 700; line-height: 1.4; color: #e8eaf0; }
+
+    .flag-display { font-size: 5rem; text-align: center; margin: 0.75rem 0; line-height: 1; }
+    .map-hint-box { background: rgba(0,255,157,0.05); border: 1px solid rgba(0,255,157,0.14); border-radius: 10px; padding: 0.9rem; font-size: 1.05rem; text-align: center; color: #00ff9d; margin: 0.7rem 0; }
+
+    .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; }
+    .opt { background: rgba(255,255,255,0.05); border: 1.5px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 0.8rem; font-size: 0.92rem; color: #d0dce8; cursor: pointer; text-align: center; transition: all .15s; font-family: 'DM Sans', sans-serif; }
+    .opt:hover:not(:disabled) { background: rgba(0,148,255,0.12); border-color: rgba(0,148,255,0.4); color: #fff; }
+    .opt.correct { background: rgba(6,214,160,0.14); border-color: #06d6a0; color: #06d6a0; font-weight: 600; }
+    .opt.wrong   { background: rgba(255,77,109,0.11); border-color: #ff4d6d; color: #ff4d6d; }
+    .opt.dim { opacity: .35; }
+    .opt:disabled { cursor: default; }
+
+    .fact-box { display: flex; align-items: flex-start; gap: 0.5rem; background: rgba(255,215,0,0.05); border: 1px solid rgba(255,215,0,0.14); border-radius: 10px; padding: 0.85rem; margin-top: 1.1rem; font-size: 0.86rem; color: #d4b94a; animation: fadeIn .4s ease; }
+    .fact-icon { font-size: 1rem; flex-shrink: 0; }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+
+    .next-btn { width: 100%; margin-top: 1.1rem; background: linear-gradient(135deg,#0094ff,#00d4ff); border: none; border-radius: 12px; padding: 0.8rem; font-size: 0.98rem; font-family: 'Syne', sans-serif; font-weight: 700; color: #fff; cursor: pointer; animation: fadeIn .3s ease; transition: opacity .2s; }
+    .next-btn:hover { opacity: .88; }
+
+    /* RESULT */
+    .result { background: radial-gradient(ellipse at 50% 0%, #0d2444 0%, #080c14 60%); }
+    .result-card { width: 100%; max-width: 460px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 22px; padding: 2rem 1.5rem; display: flex; flex-direction: column; gap: 1.1rem; }
+    .tier-good { border-color: rgba(6,214,160,0.3); }
+    .tier-mid  { border-color: rgba(255,209,102,0.3); }
+    .tier-low  { border-color: rgba(255,77,109,0.3); }
+    .result-emoji { font-size: 3.2rem; text-align: center; }
+    .result-msg { font-family: 'Syne', sans-serif; font-size: 1.3rem; font-weight: 700; text-align: center; }
+    .result-stats { display: flex; justify-content: center; gap: 1.5rem; }
+    .stat { display: flex; flex-direction: column; align-items: center; gap: 0.15rem; }
+    .stat-val { font-family: 'Syne', sans-serif; font-size: 1.9rem; font-weight: 800; color: #00d4ff; }
+    .stat-label { font-size: 0.78rem; color: #5a7a9a; }
+    .score-pct-bar { height: 7px; background: rgba(255,255,255,0.07); border-radius: 99px; overflow: hidden; }
+    .score-pct-fill { height: 100%; background: linear-gradient(90deg,#0094ff,#00d4ff); border-radius: 99px; transition: width 1s ease; }
+    .score-pct-label { text-align: center; font-size: 0.82rem; color: #5a7a9a; }
+
+    .answers-review { max-height: 190px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.35rem; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.08) transparent; }
+    .review-row { display: flex; align-items: center; gap: 0.5rem; background: rgba(255,255,255,0.03); border-radius: 8px; padding: 0.45rem 0.65rem; font-size: 0.8rem; }
+    .rev-ok   { border-left: 2px solid #06d6a0; }
+    .rev-fail { border-left: 2px solid #ff4d6d; }
+    .rev-q  { flex: 1; color: #9ab0c8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rev-ans { color: #ffd166; font-weight: 600; white-space: nowrap; }
+
+    .admin-btn-sm { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 0.72rem; font-size: 0.92rem; color: #7fa3c4; cursor: pointer; text-align: center; transition: background .2s; font-family: 'DM Sans', sans-serif; width: 100%; }
+    .admin-btn-sm:hover { background: rgba(255,255,255,0.1); color: #fff; }
+
+    /* ADMIN */
+    .admin-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.82); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 1rem; }
+    .admin-login { background: #0f1824; border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 2rem 1.75rem; width: 100%; max-width: 340px; display: flex; flex-direction: column; gap: 0.9rem; }
+    .login-icon { font-size: 2.5rem; text-align: center; }
+    .admin-login h2 { font-family: 'Syne', sans-serif; font-size: 1.3rem; text-align: center; }
+    .admin-login input { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 0.75rem 1rem; color: #e8eaf0; font-size: 0.95rem; font-family: 'DM Sans', sans-serif; outline: none; width: 100%; transition: border-color .2s; }
+    .admin-login input:focus { border-color: rgba(0,148,255,0.4); }
+    .admin-login-btns { display: flex; gap: 0.6rem; }
+    .admin-login-btns .cta-btn, .admin-login-btns .admin-btn-sm { flex: 1; }
+    .err-txt { color: #ff4d6d; font-size: 0.82rem; text-align: center; }
+    .hint-txt { color: #3a5a7a; font-size: 0.78rem; text-align: center; }
+    .hint-txt code { color: #60b8ff; background: rgba(0,148,255,0.1); border-radius: 4px; padding: 0.1rem 0.35rem; }
+
+    .admin-panel { background: #0f1824; border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; width: 100%; max-width: 680px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
+    .admin-header { display: flex; justify-content: space-between; align-items: center; padding: 1.1rem 1.4rem; border-bottom: 1px solid rgba(255,255,255,0.07); }
+    .admin-header h2 { font-family: 'Syne', sans-serif; font-size: 1.1rem; }
+    .close-btn { background: rgba(255,255,255,0.07); border: none; border-radius: 8px; padding: 0.35rem 0.65rem; color: #7fa3c4; cursor: pointer; font-size: 0.95rem; transition: all .2s; }
+    .close-btn:hover { background: rgba(255,77,109,0.18); color: #ff4d6d; }
+    .reset-btn { background: rgba(255,255,255,0.05); border: none; border-radius: 8px; padding: 0.35rem 0.65rem; color: #5a7a9a; cursor: pointer; font-size: 1rem; transition: all .2s; }
+    .reset-btn:hover { background: rgba(255,209,102,0.12); color: #ffd166; }
+
+    .admin-tabs { display: flex; gap: 0.4rem; padding: 0.65rem 1.4rem; border-bottom: 1px solid rgba(255,255,255,0.05); overflow-x: auto; }
+    .atab { background: transparent; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 0.38rem 0.85rem; font-size: 0.82rem; color: #5a7a9a; cursor: pointer; transition: all .2s; font-family: 'DM Sans', sans-serif; white-space: nowrap; }
+    .atab:hover, .atab.active { background: rgba(0,148,255,0.1); border-color: rgba(0,148,255,0.28); color: #60b8ff; }
+
+    .admin-list { flex: 1; overflow-y: auto; padding: 0.9rem 1.4rem; display: flex; flex-direction: column; gap: 0.4rem; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.08) transparent; }
+    .admin-q-row { display: flex; align-items: center; gap: 0.6rem; background: rgba(255,255,255,0.03); border-radius: 10px; padding: 0.7rem 0.9rem; font-size: 0.82rem; }
+    .q-num { color: #3a5a7a; font-family: 'Syne', sans-serif; min-width: 22px; }
+    .q-type-badge { background: rgba(0,148,255,0.09); border-radius: 6px; padding: 0.12rem 0.45rem; font-size: 0.72rem; color: #60b8ff; white-space: nowrap; }
+    .q-text { flex: 1; color: #c0d0e0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .q-answer { color: #ffd166; font-size: 0.78rem; white-space: nowrap; }
+    .q-actions { display: flex; gap: 0.35rem; }
+    .q-actions button { background: rgba(255,255,255,0.05); border: none; border-radius: 6px; padding: 0.28rem 0.45rem; cursor: pointer; font-size: 0.85rem; transition: background .2s; }
+    .q-actions button:hover { background: rgba(255,255,255,0.11); }
+
+    .admin-form { flex: 1; overflow-y: auto; padding: 1.1rem 1.4rem; display: flex; flex-direction: column; gap: 0.75rem; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.08) transparent; }
+    .admin-form label { font-size: 0.75rem; color: #5a7a9a; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+    .admin-form input, .admin-form select, .admin-form textarea { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 0.7rem 0.95rem; color: #e8eaf0; font-size: 0.92rem; font-family: 'DM Sans', sans-serif; outline: none; transition: border-color .2s; }
+    .admin-form input:focus, .admin-form select:focus, .admin-form textarea:focus { border-color: rgba(0,148,255,0.4); }
+    .admin-form select option { background: #0f1824; }
+    .admin-form textarea { resize: vertical; }
+    .form-btns { display: flex; gap: 0.65rem; }
+    .form-btns .cta-btn { flex: 2; }
+    .form-btns .admin-btn-sm { flex: 1; }
+
+    @media (max-width: 440px) {
+      .logo-title { font-size: 2.1rem; }
+      .q-main { font-size: 1.08rem; }
+      .options-grid { grid-template-columns: 1fr; }
+      .result-stats { gap: 1rem; }
+      .admin-panel { border-radius: 18px 18px 0 0; max-height: 95vh; align-self: flex-end; }
+    }
+  </style>
+
+  <!-- PWA Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => console.log('SW registered:', reg.scope))
+          .catch(err => console.log('SW error:', err));
+      });
+    }
+  </script>
+</body>
+</html>
